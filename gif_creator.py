@@ -1,12 +1,12 @@
 # This script creates a GIF from images in a specified folder based on settings in a JSON file.
 # It also provides options to delete the original images and preview the GIF in the system's default viewer.
 
-import imageio.v3 as iio
-from pathlib import Path
-import subprocess
-import platform
-import json
-import os
+import imageio.v3 as iio  # ImageIO v3 API for reading/writing images and GIFs
+from pathlib import Path  # Object-oriented path operations
+import subprocess  # To open the output file using system commands
+import platform  # Detect the current operating system
+import json  # Read settings from JSON file
+import os  # File handling and cleanup
 
 # Open a file in the system's default viewer (Safari on macOS)
 def open_file(path):
@@ -49,7 +49,6 @@ def create_gif_from_settings():
     gif_duration = settings.get("gif_duration")
     output_folder = settings.get("output_folder")
 
-    # Resolve the correct folder
     folder_path = Path(output_folder) if output_folder else settings_path.parent
 
     if not all([base_name, frame_count, gif_duration]):
@@ -61,7 +60,7 @@ def create_gif_from_settings():
     print(f"  Frame count: {frame_count}")
     print(f"  GIF duration: {gif_duration} ms")
 
-    # Load images in order
+    # Load images
     image_files = []
     for i in range(1, frame_count + 1):
         image_file = folder_path / f"{base_name}{i}.png"
@@ -74,26 +73,25 @@ def create_gif_from_settings():
         print("No valid images found. Cannot create GIF.")
         return
 
-    # Create the GIF
     output_path = folder_path / f"{base_name}.gif"
     iio.imwrite(output_path, image_files, duration=gif_duration, loop=0)
 
     print(f"\n✅ GIF created: {output_path}")
 
-    # Ask to delete image files
-    delete = input("\n🪑 Do you want to delete the image files used to create the GIF? (y/N): ").strip().lower()
-    if delete == "y":
-        deleted = 0
-        for i in range(1, frame_count + 1):
-            image_path = folder_path / f"{base_name}{i}.png"
-            if image_path.exists():
-                image_path.unlink()
-                deleted += 1
-        print(f"🗑️ Deleted {deleted} image(s).")
-    else:
-        print("🚬 Image files were kept.")
+    # Automatically delete images and settings.json
+    deleted = 0
+    for i in range(1, frame_count + 1):
+        image_path = folder_path / f"{base_name}{i}.png"
+        if image_path.exists():
+            image_path.unlink()
+            deleted += 1
+    settings_file = folder_path / "settings.json"
+    if settings_file.exists():
+        settings_file.unlink()
 
-    # Ask if user wants to preview the GIF
+    print(f"🧹 Cleaned up: {deleted} images and settings.json deleted.")
+
+    # Ask to preview the GIF
     preview = input("\n🔍 Do you want to preview the GIF now? (y/N): ").strip().lower()
     if preview == "y":
         open_file(str(output_path.resolve()))

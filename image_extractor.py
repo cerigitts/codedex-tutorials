@@ -1,9 +1,9 @@
 # This script extracts frames from a video file and saves them as images.
 # It also generates a settings file for use with another script (gif_creator.py).
 
-import cv2
-from pathlib import Path
-import json
+import cv2  # OpenCV library for video processing and frame capture
+from pathlib import Path  # Object-oriented file system paths
+import json  # For reading and writing JSON configuration files
 
 # Supported video extensions
 SUPPORTED_EXTS = [".mp4", ".mov", ".avi", ".mkv", ".webm"]
@@ -25,13 +25,13 @@ def extract_frames_smart():
 
     if not video_path:
         print(f"No video found for '{video_name}' in '{videos_folder}'.")
-        return
+        return None
 
     # Open the video file
     cap = cv2.VideoCapture(str(video_path))
     if not cap.isOpened():
         print("Failed to open the video file.")
-        return
+        return None
 
     # Get video metadata
     fps = cap.get(cv2.CAP_PROP_FPS)
@@ -93,6 +93,10 @@ def extract_frames_smart():
 
     cap.release()
 
+    if extracted == 0:
+        print("\n❌ No frames extracted. GIF creation will be skipped.")
+        return None
+
     # Save settings for gif_creator.py to read
     settings = {
         "frame_count": extracted,
@@ -107,6 +111,7 @@ def extract_frames_smart():
 
     print(f"\n✅ Done. {extracted} frames saved, {skipped} skipped.")
     print(f"🗒 settings.json written to '{output_folder}'.")
+    return True
 
 if __name__ == "__main__":
     extract_frames_smart()
