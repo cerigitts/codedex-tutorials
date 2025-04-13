@@ -1,21 +1,22 @@
 # This script extracts frames from a video file and saves them as images.
 # It also generates a settings file for use with another script (gif_creator.py).
+# Updated to creat image based on video name.
+# Updated the frame extraction logic to use numpy for accurate frame index distribution.
+# Updated to synchronize the frame extraction with the video FPS.
 
-import cv2  # OpenCV library for video processing and frame capture
-from pathlib import Path  # Object-oriented file system paths
-import json  # For reading and writing JSON configuration files
+import cv2
+from pathlib import Path
+import json
+import numpy as np  # For accurate frame index distribution
 
-# Supported video extensions
 SUPPORTED_EXTS = [".mp4", ".mov", ".avi", ".mkv", ".webm"]
 
 def extract_frames_smart():
     videos_folder = Path("Videos")
     images_folder = Path("Images")
 
-    # Ask user for the base video name
     video_name = input("Enter the video name (without extension): ").strip()
 
-    # Try to find the matching video file with supported extensions
     video_path = None
     for ext in SUPPORTED_EXTS:
         potential_path = videos_folder / f"{video_name}{ext}"
@@ -27,56 +28,47 @@ def extract_frames_smart():
         print(f"No video found for '{video_name}' in '{videos_folder}'.")
         return None
 
-    # Open the video file
     cap = cv2.VideoCapture(str(video_path))
     if not cap.isOpened():
         print("Failed to open the video file.")
         return None
 
-    # Get video metadata
     fps = cap.get(cv2.CAP_PROP_FPS)
     frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     duration = frame_count / fps if fps else 0
 
-    print(f"\n🎥 Video loaded: {video_path.name}")
-    print(f"Duration: {duration:.2f} seconds")
-    print(f"Total frames: {frame_count}")
-    print(f"FPS: {fps:.2f}")
-
-    # Ask user for a base name to use for image files
-    base_name = input("Enter a base name for the image files (e.g. 'anime'): ").strip()
+    base_name = video_path.stem  # Use video filename (no extension)
     output_folder = images_folder / base_name
     output_folder.mkdir(parents=True, exist_ok=True)
 
-    # Explain style options
-    print("\nChoose your GIF style:")
-    print("  smooth → very high frame count (~0.2s apart), ultra-fluid motion")
-    print("  harsh  → fewer frames (~1.75s apart), stylised and punchy")
+    print(f"\n🎥 Video loaded: {video_path.name}")
+    print(f"Duration: {duration:.2f} seconds")
+    print(f"Total frames: {frame_count}")
+    print(f"Original FPS: {fps:.2f}")
 
-    # Ask user for desired style
+    # Define limits for frame rate input
+    min_fps = 15
+    max_fps = min(50, int(fps))  # Cap at 50 FPS or the video's original FPS
+
+    print(f"\nChoose your target GIF frame rate:")
+    print(f"  {min_fps} = stylised and harsh")
+    print(f"  {max_fps} = ultra smooth (based on source FPS)")
+
     while True:
-        style = input("Choose style - smooth or harsh: ").strip().lower()
-        if style in ["smooth", "harsh"]:
-            break
-        print("Invalid choice. Type 'smooth' or 'harsh'.")
+        fps_input = input(f"Enter target frame rate ({min_fps}–{max_fps}): ").strip()
+        if fps_input.isdigit():
+            target_fps = int(fps_input)
+            if min_fps <= target_fps <= max_fps:
+                break
+        print(f"❌ Please enter a number between {min_fps} and {max_fps}.")
 
-    # Determine capture interval and GIF speed based on style
-    if style == "smooth":
-        interval = 0.2
-        gif_duration = 50
-    else:
-        interval = 1.75
-        gif_duration = 200
+    num_frames = max(10, min(int(duration * target_fps), frame_count))
+    frame_indices = np.linspace(0, frame_count - 1, num_frames, dtype=int)
+    gif_duration = round((duration / num_frames) * 1000)
 
-    # Determine which frames to capture based on interval
-    num_frames = int(duration / interval)
-    step = int(frame_count / num_frames)
-    frame_indices = [i * step for i in range(num_frames)]
-
-    print(f"\nExtracting {num_frames} frame(s) at ~{interval:.2f}s intervals...")
+    print(f"\nExtracting {num_frames} frame(s)...")
     print(f"Output folder: {output_folder}")
 
-    # Extract and save selected frames
     extracted = 0
     skipped = 0
     for i, frame_num in enumerate(frame_indices):
@@ -97,12 +89,11 @@ def extract_frames_smart():
         print("\n❌ No frames extracted. GIF creation will be skipped.")
         return None
 
-    # Save settings for gif_creator.py to read
     settings = {
         "frame_count": extracted,
         "gif_duration": gif_duration,
         "base_name": base_name,
-        "style": style,
+        "style": f"{target_fps} fps",
         "output_folder": str(output_folder.resolve())
     }
 
