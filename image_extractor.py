@@ -1,27 +1,20 @@
-# This script extracts frames from a video file and saves them as images.
-# It also generates a settings file for use with another script (gif_creator.py).
-# Updated to creat image based on video name.
-# Updated the frame extraction logic to use numpy for accurate frame index distribution.
-# Updated to synchronize the frame extraction with the video FPS.
+# image_extractor.py
+# Extract frames from a video file, with optional selection index control
 
 import cv2
 from pathlib import Path
-import json
-import numpy as np  # For accurate frame index distribution
+import numpy as np
+import os
 
 SUPPORTED_EXTS = [".mp4", ".mov", ".avi", ".mkv", ".webm"]
 
-def extract_frames_smart():
-    videos_folder = Path("Videos")
-    images_folder = Path("Images")
-
-    video_name = input("Enter the video name (without extension): ").strip()
-
+def extract_frames(video_name, videos_folder=Path("Videos"), images_folder=Path("Images"),
+                   max_width=640, max_height=480, selected_indices=None):
     video_path = None
     for ext in SUPPORTED_EXTS:
-        potential_path = videos_folder / f"{video_name}{ext}"
-        if potential_path.exists():
-            video_path = potential_path
+        candidate = videos_folder / f"{video_name}{ext}"
+        if candidate.exists():
+            video_path = candidate
             break
 
     if not video_path:
@@ -30,79 +23,56 @@ def extract_frames_smart():
 
     cap = cv2.VideoCapture(str(video_path))
     if not cap.isOpened():
-        print("Failed to open the video file.")
+        print("Failed to open video.")
         return None
 
-    fps = cap.get(cv2.CAP_PROP_FPS)
+    orig_fps = cap.get(cv2.CAP_PROP_FPS)
     frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-    duration = frame_count / fps if fps else 0
+    duration = frame_count / orig_fps if orig_fps else 0
 
-    base_name = video_path.stem  # Use video filename (no extension)
-    output_folder = images_folder / base_name
+    ret, frame = cap.read()
+    if not ret:
+        print("Failed to read first frame.")
+        return None
+
+    orig_height, orig_width = frame.shape[:2]
+    scale_factor = min(max_width / orig_width, max_height / orig_height, 1.0)
+    new_width = int(orig_width * scale_factor)
+    new_height = int(orig_height * scale_factor)
+
+    cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+    output_folder = images_folder / video_path.stem
     output_folder.mkdir(parents=True, exist_ok=True)
 
-    print(f"\n🎥 Video loaded: {video_path.name}")
-    print(f"Duration: {duration:.2f} seconds")
-    print(f"Total frames: {frame_count}")
-    print(f"Original FPS: {fps:.2f}")
+    frame_files = []
+    frame_sizes = []
 
-    # Define limits for frame rate input
-    min_fps = 15
-    max_fps = min(50, int(fps))  # Cap at 50 FPS or the video's original FPS
+    if selected_indices is None:
+        selected_indices = range(frame_count)
 
-    print(f"\nChoose your target GIF frame rate:")
-    print(f"  {min_fps} = stylised and harsh")
-    print(f"  {max_fps} = ultra smooth (based on source FPS)")
-
-    while True:
-        fps_input = input(f"Enter target frame rate ({min_fps}–{max_fps}): ").strip()
-        if fps_input.isdigit():
-            target_fps = int(fps_input)
-            if min_fps <= target_fps <= max_fps:
-                break
-        print(f"❌ Please enter a number between {min_fps} and {max_fps}.")
-
-    num_frames = max(10, min(int(duration * target_fps), frame_count))
-    frame_indices = np.linspace(0, frame_count - 1, num_frames, dtype=int)
-    gif_duration = round((duration / num_frames) * 1000)
-
-    print(f"\nExtracting {num_frames} frame(s)...")
-    print(f"Output folder: {output_folder}")
-
-    extracted = 0
-    skipped = 0
-    for i, frame_num in enumerate(frame_indices):
-        cap.set(cv2.CAP_PROP_POS_FRAMES, frame_num)
+    for idx in selected_indices:
+        cap.set(cv2.CAP_PROP_POS_FRAMES, idx)
         ret, frame = cap.read()
         if not ret:
-            print(f"⚠️ Skipping unreadable frame at {frame_num}")
-            skipped += 1
             continue
-        filename = output_folder / f"{base_name}{i + 1}.png"
-        cv2.imwrite(str(filename), frame)
-        print(f"Saved: {filename.name}")
-        extracted += 1
+        resized = cv2.resize(frame, (new_width, new_height), interpolation=cv2.INTER_AREA)
+        filename = output_folder / f"frame_{idx:05d}.png"
+        cv2.imwrite(str(filename), resized)
+        frame_files.append(filename)
+        size_bytes = filename.stat().st_size
+        frame_sizes.append(size_bytes)
 
     cap.release()
 
-    if extracted == 0:
-        print("\n❌ No frames extracted. GIF creation will be skipped.")
-        return None
+    total_raw_size_mb = sum(frame_sizes) / (1024 * 1024)
 
-    settings = {
-        "frame_count": extracted,
-        "gif_duration": gif_duration,
-        "base_name": base_name,
-        "style": f"{target_fps} fps",
-        "output_folder": str(output_folder.resolve())
+    return {
+        "output_folder": output_folder,
+        "frame_files": frame_files,
+        "frame_sizes": frame_sizes,
+        "orig_fps": orig_fps,
+        "duration": duration,
+        "resolution": (new_width, new_height),
+        "frame_count": len(frame_files),
+        "total_raw_size_mb": total_raw_size_mb
     }
-
-    with open(output_folder / "settings.json", "w") as f:
-        json.dump(settings, f, indent=4)
-
-    print(f"\n✅ Done. {extracted} frames saved, {skipped} skipped.")
-    print(f"🗒 settings.json written to '{output_folder}'.")
-    return True
-
-if __name__ == "__main__":
-    extract_frames_smart()
